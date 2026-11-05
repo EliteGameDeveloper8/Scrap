@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta
+      name="description"
+      content="Scrapwheel: build a vehicle from parts, then drive it through physics challenges."
+    />
+    <title>Scrapwheel</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <!--
+    SCRAPWHEEL - code guide
+    =======================
+    A 2D physics game in the browser: build a vehicle from parts on a grid, drive it through
+    missions, earn coins and new parts, and build something better.
+
+    No build step: every file in js/ is a classic <script>, loaded in the order at the bottom of
+    this page. They share one global object, SW, and each file starts with a comment explaining
+    what it contains. Physics is planck.js (a Box2D port) in lib/.
+
+      js/core/    util.js (helpers), config.js (parts, missions, balance), save.js (device storage)
+      js/build/   blueprint.js (vehicle designs: checks and stats), garage.js (the builder)
+      js/world/   track.js (course generation), world.js (physics world for a course)
+      js/game/    vehicle.js (a design as a physics vehicle, damage), run.js (one drive: rules, rewards)
+      js/render/  parts.js (how parts look), effects.js (particles), render.js (drawing a drive)
+      js/ui/      ui.js (screens, menus, shop, builds), hud.js, input.js, audio.js
+      js/main.js  game flow and the frame loop
+
+    Key state: SW.Save.profile() (coins, parts, progress), SW.Run.current() (the drive), SW.CFG (data).
+  -->
+  <body>
+    <canvas id="view"></canvas>
+
+    <!-- Title -->
+    <section id="s-title" class="screen">
+      <div class="title-card">
+        <h1 class="logo">Scrap<span>wheel</span></h1>
+        <p class="tagline">Build it. Drive it. Break it. Build it better.</p>
+        <div class="stack">
+          <button class="btn primary big" data-go="missions">Play</button>
+          <button class="btn big" data-go="garage">Garage</button>
+          <button class="btn big" data-go="shop">Parts shop</button>
+          <button class="btn big" data-go="settings">Settings</button>
+        </div>
+        <p class="coins-line"><span class="coin"></span><b class="coins">0</b> coins</p>
+      </div>
+      <footer class="foot">Open source · MIT licence</footer>
+    </section>
+
+    <!-- Missions -->
+    <section id="s-missions" class="screen page">
+      <header class="bar">
+        <button class="btn ghost" data-go="title">← Menu</button>
+        <h2>Missions</h2>
+        <span class="coins-pill"><span class="coin"></span><b class="coins">0</b></span>
+      </header>
+      <div id="mission-list" class="mission-grid"></div>
+    </section>
+
+    <!-- Garage -->
+    <section id="s-garage" class="screen garage">
+      <header class="bar">
+        <button class="btn ghost" data-go="missions">← Missions</button>
+        <h2 id="g-title">Garage</h2>
+        <button class="btn" data-modal="builds">My builds</button>
+        <span class="coins-pill"><span class="coin"></span><b id="g-coins">0</b></span>
+      </header>
+      <div class="g-main">
+        <div class="g-canvas"><canvas id="grid"></canvas></div>
+        <aside class="g-side">
+          <div id="g-mission" class="card"></div>
+          <div class="card">
+            <div id="g-stats"></div>
+            <div class="susp">
+              <span>Suspension</span>
+              <div id="g-susp" class="seg">
+                <button data-susp="soft">Soft</button>
+                <button data-susp="normal">Normal</button>
+                <button data-susp="stiff">Stiff</button>
+              </div>
+            </div>
+          </div>
+          <ul id="g-warnings" class="warnings"></ul>
+          <div class="g-actions">
+            <button id="g-test" class="btn" data-act="test">Test drive</button>
+            <button id="g-drive" class="btn primary" data-act="drive">Drive!</button>
+          </div>
+        </aside>
+      </div>
+      <footer class="g-bottom">
+        <div id="g-palette" class="palette"></div>
+        <div id="g-tools" class="tools">
+          <button class="btn small" data-tool="rotate" title="Rotate (R)">Rotate <kbd>R</kbd></button>
+          <button id="g-erase" class="btn small" data-tool="erase" title="Remove parts (X, or right-click)">
+            Remove <kbd>X</kbd>
+          </button>
+          <button class="btn small" data-tool="undo" title="Undo (Ctrl+Z)">Undo</button>
+          <button class="btn small ghost" data-tool="clear">Clear</button>
+        </div>
+      </footer>
+    </section>
+
+    <!-- Shop -->
+    <section id="s-shop" class="screen page">
+      <header class="bar">
+        <button class="btn ghost" data-go="back">← Back</button>
+        <h2>Parts shop</h2>
+        <span class="coins-pill"><span class="coin"></span><b class="coins">0</b></span>
+      </header>
+      <p class="page-note">Missions give you new parts the first time you finish them. Coins buy more.</p>
+      <div id="shop-list" class="shop-grid"></div>
+    </section>
+
+    <!-- Settings -->
+    <section id="s-settings" class="screen page">
+      <header class="bar">
+        <button class="btn ghost" data-go="title">← Menu</button>
+        <h2>Settings</h2>
+      </header>
+      <div class="settings card">
+        <label class="check"
+          ><input type="checkbox" data-setting="sound" /> <span><b>Sound</b></span></label
+        >
+        <label class="check"
+          ><input type="checkbox" data-setting="particles" />
+          <span><b>Particles</b><small>Dust, smoke and sparks</small></span></label
+        >
+        <label class="check"
+          ><input type="checkbox" data-setting="shake" /> <span><b>Screen shake</b></span></label
+        >
+        <h3>Controls</h3>
+        <table class="keys">
+          <tr>
+            <td>Accelerate / reverse</td>
+            <td><kbd>D</kbd> <kbd>A</kbd> or <kbd>→</kbd> <kbd>←</kbd></td>
+          </tr>
+          <tr>
+            <td>Tilt back / forward</td>
+            <td><kbd>W</kbd> <kbd>S</kbd> or <kbd>↑</kbd> <kbd>↓</kbd></td>
+          </tr>
+          <tr>
+            <td>Rocket boost</td>
+            <td><kbd>Space</kbd></td>
+          </tr>
+          <tr>
+            <td>Restart / pause</td>
+            <td><kbd>R</kbd> <kbd>Esc</kbd></td>
+          </tr>
+        </table>
+        <button class="btn danger-text ghost" data-act="reset">Reset all progress…</button>
+      </div>
+    </section>
+
+    <!-- Driving HUD -->
+    <div id="hud" class="hidden">
+      <div class="h-top">
+        <div class="h-box h-fuel">
+          <span>Fuel</span>
+          <div class="gauge"><i id="h-fuel"></i></div>
+        </div>
+        <div class="h-box h-progress">
+          <div class="track-bar"><i id="h-progress"></i><b id="h-car"></b></div>
+          <span id="h-dist">0 m</span>
+        </div>
+        <div class="h-box h-right">
+          <span id="h-time">0:00.0</span>
+          <span class="coins-pill small"><span class="coin"></span><b id="h-coins">0</b></span>
+        </div>
+        <div class="h-buttons">
+          <button class="btn small" data-act="restart" title="Restart (R)">Restart</button>
+          <button class="btn small" data-act="pause" title="Pause (Esc)">Pause</button>
+        </div>
+      </div>
+      <div id="h-hint" class="h-hint hidden"></div>
+      <div id="touch" class="touch">
+        <div class="t-left">
+          <button data-touch="reverse" aria-label="Brake and reverse">◀</button>
+          <button data-touch="leanB" aria-label="Tilt back">⟲</button>
+          <button data-touch="leanF" aria-label="Tilt forward">⟳</button>
+        </div>
+        <div class="t-right">
+          <button data-touch="boost" class="boost" aria-label="Boost">Boost</button>
+          <button data-touch="gas" class="gas" aria-label="Accelerate">▶</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal" class="hidden"><div id="modal-card" class="modal-card"></div></div>
+    <div id="confirm" class="hidden" role="dialog" aria-modal="true">
+      <div class="confirm-card">
+        <p id="confirm-text"></p>
+        <div class="row-btns">
+          <button id="confirm-cancel" class="btn ghost">Cancel</button>
+          <button id="confirm-ok" class="btn primary">OK</button>
+        </div>
+      </div>
+    </div>
+    <div id="toasts" aria-live="polite"></div>
+
+    <!-- Scripts: the order matters -->
+    <script src="lib/planck.min.js"></script>
+    <script src="js/core/util.js"></script>
+    <script src="js/core/config.js"></script>
+    <script src="js/build/blueprint.js"></script>
+    <script src="js/core/save.js"></script>
+    <script src="js/world/track.js"></script>
+    <script src="js/world/world.js"></script>
+    <script src="js/game/vehicle.js"></script>
+    <script src="js/render/parts.js"></script>
+    <script src="js/render/effects.js"></script>
+    <script src="js/render/render.js"></script>
+    <script src="js/game/run.js"></script>
+    <script src="js/build/garage.js"></script>
+    <script src="js/ui/audio.js"></script>
+    <script src="js/ui/input.js"></script>
+    <script src="js/ui/hud.js"></script>
+    <script src="js/ui/ui.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>

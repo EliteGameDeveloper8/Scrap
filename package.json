@@ -1,0 +1,15 @@
+{
+  "name": "scrapwheel",
+  "version": "1.0.0",
+  "description": "A 2D physics game in the browser: build a vehicle from parts, then drive it through missions to earn more parts.",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "npx --yes serve -l 8080 .",
+    "format": "npx --yes prettier@3 --write \"js/**/*.js\" \"tools/**/*.js\" css/style.css index.html",
+    "test": "node tools/smoke-test.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
